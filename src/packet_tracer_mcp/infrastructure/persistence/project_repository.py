@@ -1,0 +1,84 @@
+"""
+Project repository: persistence of plans and artifacts.
+"""
+
+from __future__ import annotations
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+from ...domain.models.plans import TopologyPlan
+from ...shared.utils import safe_name
+
+
+class ProjectRepository:
+    """Manages project persistence."""
+
+    def __init__(self, base_dir: str | Path = "projects"):
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _safe_name(name: str) -> str:
+        """Normalize a project name to a filesystem-safe dir.
+
+        Delegated to shared.utils.safe_name so that save/load/delete and the
+        ManualExecutor use exactly the same normalization (previously save
+        normalized but load/delete did not -> FileNotFound).
+        """
+        return safe_name(name)
+
+    def save_plan(self, plan: TopologyPlan, project_name: str | None = None) -> Path:
+        """Save a plan as JSON."""
+        name = self._safe_name(project_name or plan.name or "topology")
+        project_dir = self.base_dir / name
+        project_dir.mkdir(parents=True, exist_ok=True)
+
+        plan_path = project_dir / "plan.json"
+        plan_path.write_text(plan.model_dump_json(indent=2), encoding="utf-8", newline="\n")
+
+        # Metadata
+        meta_path = project_dir / "metadata.json"
+        meta = {
+            "project_name": name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "devices": len(plan.devices),
+            "links": len(plan.links),
+            "is_valid": plan.is_valid,
+        }
+        meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8", newline="\n")
+
+        return plan_path
+
+    def load_plan(self, project_name: str) -> TopologyPlan:
+        """Load a plan from JSON."""
+        plan_path = self.base_dir / self._safe_name(project_name) / "plan.json"
+        if not plan_path.exists():
+            raise FileNotFoundError(f"Project '{project_name}' not found")
+        return TopologyPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+
+    def list_projects(self) -> list[dict]:
+        """List all saved projects."""
+        projects = []
+        for d in sorted(self.base_dir.iterdir()):
+            if d.is_dir():
+                meta_path = d / "metadata.json"
+                if meta_path.exists():
+                    # One corrupt/unreadable metadata.json must not take down the
+                    # whole listing - fall back to the directory name.
+                    try:
+                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError, ValueError):
+                        meta = {"project_name": d.name, "error": "corrupt metadata.json"}
+                    projects.append(meta)
+                else:
+                    projects.append({"project_name": d.name})
+        return projects
+
+    def delete_project(self, project_name: str) -> bool:
+        """Delete a project."""
+        project_dir = self.base_dir / self._safe_name(project_name)
+        if not project_dir.exists():
+            return False
+        import shutil
+        shutil.rmtree(project_dir)
+        return True

@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "packet-tracer-mcp"
+version = "0.5.0"
+description = "MCP server for Cisco Packet Tracer - plan, validate, generate, deploy and live-configure topologies from any LLM"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "Mateo" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "packet-tracer",
+    "cisco",
+    "networking",
+    "ccna",
+    "network-automation",
+    "topology",
+    "ospf",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Topic :: Education",
+]
+dependencies = [
+    # FastMCP was renamed in MCP 2.x; keep the supported API until migrated.
+    "mcp[cli]>=1.0.0,<2.0.0",
+    "pydantic>=2.13.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
+]
+# Offline .pkt/.pka file-format tools (offline-tools/) need Twofish, which
+# pycryptodome does not provide. Installs identically on macOS and Windows:
+#   pip install -e ".[offline]"
+offline = [
+    "twofish",
+]
+
+[project.urls]
+Homepage = "https://github.com/mex-i/MCP-Packet-Tracer"
+Repository = "https://github.com/mex-i/MCP-Packet-Tracer"
+Issues = "https://github.com/mex-i/MCP-Packet-Tracer/issues"
+
+[project.scripts]
+pt-mcp = "packet_tracer_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/packet_tracer_mcp"]

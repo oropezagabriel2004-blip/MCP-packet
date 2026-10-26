@@ -1,0 +1,126 @@
+"""Runtime regressions not covered by the original tests."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+
+from packet_tracer_mcp.application.use_cases.fix_plan import fix_plan_uc
+from packet_tracer_mcp.domain.models.plans import DevicePlan, LinkPlan, TopologyPlan
+from packet_tracer_mcp.domain.models.requests import TopologyRequest
+from packet_tracer_mcp.domain.services.orchestrator import plan_from_request
+from packet_tracer_mcp.infrastructure.catalog.templates import list_templates
+from packet_tracer_mcp.infrastructure.generator.cli_config_generator import generate_pc_config
+from packet_tracer_mcp.infrastructure.execution.manual_executor import ManualExecutor
+from packet_tracer_mcp.domain.services.estimator import estimate_from_request
+
+
+def test_list_templates_returns_template_specs():
+    templates = list_templates()
+    assert len(templates) > 0
+    first = templates[0]
+    assert hasattr(first, "name")
+    assert hasattr(first, "min_routers")
+    assert hasattr(first, "default_routing")
+
+
+def test_manual_executor_respects_project_name_and_writes_metadata():
+    req = TopologyRequest(routers=2, pcs_per_lan=2)
+    plan, _ = plan_from_request(req)
+
+    output_dir = Path("data") / "test_export_runtime"
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    executor = ManualExecutor(output_dir=output_dir)
+    result = executor.execute(plan, project_name="my project")
+    assert result["status"] == "exported"
+    project_dir = output_dir / "my_project"
+    assert project_dir.exists()
+    assert (project_dir / "topology.js").exists()
+    assert (project_dir / "full_build.js").exists()
+    assert (project_dir / "plan.json").exists()
+
+    metadata = json.loads((project_dir / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["project_name"] == "my_project"
+    assert metadata["devices"] == len(plan.devices)
+    assert metadata["links"] == len(plan.links)
+
+
+def test_static_routes_include_multihop_destinations():
+    req = TopologyRequest(routers=3, pcs_per_lan=1, routing="static")
+    plan, _ = plan_from_request(req)
+
+    r1_to_r3_lans = [
+        r for r in plan.static_routes
+        if r.router == "R1" and r.destination == "192.168.2.0"
+    ]
+    assert len(r1_to_r3_lans) >= 1
+
+
+def test_first_host_ip_starts_at_dot_2():
+    req = TopologyRequest(routers=1, pcs_per_lan=1)
+    plan, _ = plan_from_request(req)
+
+    pc = next(d for d in plan.devices if d.category == "pc")
+    ip_cidr = next(iter(pc.interfaces.values()))
+    assert ip_cidr.startswith("192.168.0.2/")
+
+
+def test_fix_plan_uc_returns_structured_remaining_errors():
+    plan = TopologyPlan(
+        devices=[
+            DevicePlan(name="R1", model="2911", category="router"),
+            DevicePlan(name="R1", model="2960-24TT", category="switch"),
+        ],
+    )
+
+    result = fix_plan_uc(plan)
+    assert isinstance(result.remaining_errors, list)
+    assert result.remaining_errors
+    assert "error_code" in result.remaining_errors[0]
+
+
+def test_estimate_from_request_counts_laptops_and_access_points():
+    req = TopologyRequest(
+        routers=2,
+        pcs_per_lan=3,
+        laptops_per_lan=1,
+        access_points=2,
+        switches_per_router=1,
+    )
+    est = estimate_from_request(req)
+
+    assert est["devices"]["laptops"] == 2
+    assert est["devices"]["access_points"] == 2
+    assert est["links"]["switch_to_laptop"] == 2
+    assert est["links"]["switch_to_access_point"] == 2
+
+
+def test_generate_pc_config_marks_static_hosts_as_static():
+    host = DevicePlan(
+        name="PC1",
+        model="PC-PT",
+        category="pc",
+        interfaces={"FastEthernet0": "192.168.10.2/24"},
+        gateway="192.168.10.1",
+    )
+
+    cfg = generate_pc_config(host, use_dhcp=False)
+    assert "Configure a static IP" in cfg
+    assert "DHCP" not in cfg.splitlines()[-1]
+
+
+def test_generate_pc_config_marks_dhcp_hosts_as_dhcp():
+    host = DevicePlan(
+        name="PC1",
+        model="PC-PT",
+        category="pc",
+        interfaces={"FastEthernet0": "192.168.10.2/24"},
+        gateway="192.168.10.1",
+    )
+
+    cfg = generate_pc_config(host, use_dhcp=True)
+    assert "Configure as DHCP" in cfg
