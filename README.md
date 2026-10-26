@@ -277,7 +277,7 @@ python -m pytest tests/ -q
 Resultado esperado:
 
 ```
-369 passed in ~2.5s
+389 passed in ~10s
 ```
 
 ### 8.4. Probar una herramienta
@@ -385,7 +385,7 @@ MCP-packet/
 │   ├── server.py              # Instancia FastMCP
 │   ├── settings.py            # Configuración del servidor
 │   └── __main__.py            # Punto de entrada: python -m packet_tracer_mcp
-├── tests/                     # 369 pruebas automatizadas
+├── tests/                     # 389 pruebas automatizadas
 ├── offline-tools/             # Utilidades para archivos .pkt/.pka/.pts
 ├── demo/                      # Imágenes de demostración
 ├── img/                       # Capturas de pantalla
@@ -410,7 +410,7 @@ MCP-packet/
 | Tipos de cable | 15 |
 | Plantillas de topología | 9 |
 | Protocolos de enrutamiento | Static, OSPF, EIGRP, RIP |
-| Pruebas automatizadas | 369 |
+| Pruebas automatizadas | 389 |
 
 ---
 
